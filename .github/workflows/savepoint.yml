@@ -57,6 +57,7 @@ jobs:
           $cap = "src-tauri/capabilities/default.json"
           $j = Get-Content -Raw $cap | ConvertFrom-Json
           $j.permissions += "core:window:allow-start-resize-dragging"
+          $j.permissions += "core:window:allow-set-title"
           $j | ConvertTo-Json -Depth 10 | Set-Content -Encoding utf8NoBOM $cap
           $inject = Join-Path $env:GITHUB_WORKSPACE "savepoint/savepoint-titlebar.js"
           $args = @(
