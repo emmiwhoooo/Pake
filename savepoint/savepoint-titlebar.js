@@ -100,6 +100,7 @@
   const GLYPH = {
     min: [".........", ".........", ".........", ".........", ".........", ".........", ".XXXXXXX.", ".XXXXXXX.", "........."],
     max: ["XXXXXXXXX", "XXXXXXXXX", "X.......X", "X.......X", "X.......X", "X.......X", "X.......X", "XXXXXXXXX", "........."],
+    home: ["...X.....", "..XX.....", ".XXXXXXXX", "XXXXXXXXX", ".XXXXXXXX", "..XX.....", "...X.....", ".........", "........."],
     close: ["XX.....XX", ".XX...XX.", "..XX.XX..", "...XXX...", "..XX.XX..", ".XX...XX.", "XX.....XX", ".........", "........."],
   };
   function glyphSvg(name) {
@@ -150,6 +151,7 @@
     html[data-sp-theme="dark"] #sp-titlebar .sp-btn { border-color: #30bddb; box-shadow: inset -2px -2px 0 var(--sp-btn-lo), 0 0 5px rgba(48,189,219,.45); }
     html[data-sp-theme="dark"] #sp-titlebar .sp-btn.sp-close { border-color: #ff4fa8; box-shadow: inset -2px -2px 0 var(--sp-btn-lo), 0 0 5px rgba(255,79,168,.5); }
     #sp-titlebar .sp-btns { display: flex; gap: 4px; }
+    #sp-titlebar .sp-btn.sp-home { width: 40px; background: var(--sp-close-hover); margin-right: 6px; }
     @keyframes sp-beat { 0%,100% { transform: scale(1); } 12% { transform: scale(1.15); } 24% { transform: scale(1); } }
     #sp-titlebar .sp-heart { animation: sp-beat 2.4s steps(4) infinite; }
     #sp-titlebar .sp-blink { animation: sp-blink 1.1s steps(1) infinite; }
@@ -157,10 +159,19 @@
 
     /* Push the whole page under the bar. The transform makes body the
        containing block for the page's own fixed-position layers. */
-    body {
+    html:not(.sp-pinned) body {
       position: fixed !important; top: ${BAR}px !important; left: 0 !important;
       right: 0 !important; bottom: 0 !important; height: auto !important;
       transform: translateZ(0); overflow: hidden;
+    }
+    /* On the save point page: pin the dashboard's own frame under the bar so
+       it fills the window and covers Claude's page header. */
+    iframe[data-sp-pinned] {
+      position: fixed !important; top: ${BAR}px !important; left: 0 !important;
+      width: 100vw !important; height: calc(100vh - ${BAR}px) !important;
+      max-width: none !important; max-height: none !important; margin: 0 !important;
+      border: 0 !important; border-radius: 0 !important; transform: none !important;
+      z-index: 2147483646 !important; background: var(--sp-page) !important;
     }
     /* Pake's own invisible drag strip would cover the dashboard's top nav. */
     #pake-top-dom { display: none !important; }
@@ -197,8 +208,74 @@
     setTheme(d.mode);
   });
 
+  // Find the dashboard frame (the biggest iframe on a claude.ai page) and pin it.
+  function pin() {
+    if (!/(^|\.)claude\.ai$/.test(location.hostname)) return;
+    const cur = document.querySelector("iframe[data-sp-pinned]");
+    let best = null, area = 0;
+    for (const f of document.querySelectorAll("iframe")) {
+      if (f === cur) { best = f; break; }
+      const r = f.getBoundingClientRect();
+      const a = r.width * r.height;
+      if (a > area) { area = a; best = f; }
+    }
+    if (best && best !== cur && area < innerWidth * innerHeight * 0.15) best = null;
+    if (!best) {
+      if (cur) cur.removeAttribute("data-sp-pinned");
+      document.documentElement.classList.remove("sp-pinned");
+      return;
+    }
+    if (best !== cur) {
+      if (cur) cur.removeAttribute("data-sp-pinned");
+      best.setAttribute("data-sp-pinned", "");
+    }
+    // Anything that creates a containing block would trap position:fixed.
+    for (let a = best.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      if (cs.transform !== "none") a.style.setProperty("transform", "none", "important");
+      if (cs.filter !== "none") a.style.setProperty("filter", "none", "important");
+      if (cs.perspective !== "none") a.style.setProperty("perspective", "none", "important");
+      if (cs.contain !== "none" && cs.contain !== "") a.style.setProperty("contain", "none", "important");
+      if (cs.willChange && cs.willChange !== "auto") a.style.setProperty("will-change", "auto", "important");
+      if (cs.backdropFilter && cs.backdropFilter !== "none") a.style.setProperty("backdrop-filter", "none", "important");
+    }
+    document.documentElement.classList.add("sp-pinned");
+  }
+  setInterval(pin, 700);
+
   function win() {
     return window.__TAURI__?.window?.getCurrentWindow?.();
+  }
+
+  // Pake only lets the window controls work on claude.ai. If sign-in or a
+  // link wanders somewhere else (Google sign-in, etc.), show a way home.
+  const HOME = "https://claude.ai/artifact/99syVi2QVFcSx8LNc99wtp";
+  const onClaude = /(^|\.)claude\.ai$/.test(location.hostname);
+
+  // Undecorated windows have no native resize border; add our own edges.
+  function addResizeEdges() {
+    const E = 6;
+    const edges = [
+      ["North", `top:0;left:${E}px;right:${E}px;height:${E}px;cursor:ns-resize`],
+      ["South", `bottom:0;left:${E}px;right:${E}px;height:${E}px;cursor:ns-resize`],
+      ["West", `left:0;top:${E}px;bottom:${E}px;width:${E}px;cursor:ew-resize`],
+      ["East", `right:0;top:${E}px;bottom:${E}px;width:${E}px;cursor:ew-resize`],
+      ["NorthWest", `top:0;left:0;width:${E * 2}px;height:${E * 2}px;cursor:nwse-resize`],
+      ["NorthEast", `top:0;right:0;width:${E * 2}px;height:${E * 2}px;cursor:nesw-resize`],
+      ["SouthWest", `bottom:0;left:0;width:${E * 2}px;height:${E * 2}px;cursor:nesw-resize`],
+      ["SouthEast", `bottom:0;right:0;width:${E * 2}px;height:${E * 2}px;cursor:nwse-resize`],
+    ];
+    for (const [dir, css] of edges) {
+      const h = document.createElement("div");
+      h.className = "sp-resize";
+      h.style.cssText = `position:fixed;z-index:2147483647;${css}`;
+      h.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault(); e.stopPropagation();
+        win()?.startResizeDragging?.(dir);
+      });
+      document.documentElement.appendChild(h);
+    }
   }
 
   function build() {
@@ -210,7 +287,6 @@
 
     const drag = document.createElement("div");
     drag.className = "sp-drag";
-    drag.setAttribute("data-tauri-drag-region", "");
 
     const heart = heartSvg(2);
     heart.classList.add("sp-heart");
@@ -245,6 +321,9 @@
       b.addEventListener("click", fn);
       return b;
     };
+    if (!onClaude) {
+      btns.appendChild(mk("home", "back to save point", () => { location.href = HOME; }, "sp-home"));
+    }
     btns.appendChild(mk("min", "minimize", () => win()?.minimize?.()));
     btns.appendChild(mk("max", "maximize", () => win()?.toggleMaximize?.()));
     btns.appendChild(mk("close", "close", () => win()?.close?.(), "sp-close"));
@@ -253,6 +332,7 @@
     bar.appendChild(btns);
     // On <html>, not <body>, so it isn't pushed down with the page.
     document.documentElement.appendChild(bar);
+    if (!document.querySelector(".sp-resize")) addResizeEdges();
   }
 
   if (document.readyState === "loading") {
