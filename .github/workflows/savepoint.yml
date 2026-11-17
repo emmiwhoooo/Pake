@@ -1,0 +1,73 @@
+name: Build SAVE_POINT.EXE
+
+# One-click Windows build of Em's save point dashboard as a desktop app.
+# Run it from the Actions tab; the installer appears as a download on the run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "save point link"
+        required: true
+        default: "https://claude.ai/artifact/99syVi2QVFcSx8LNc99wtp"
+      app_version:
+        description: "App version (bump it to install over an older build)"
+        required: false
+        default: "1.0.0"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js Environment
+        uses: ./.github/actions/setup-env
+        with:
+          mode: build
+
+      - name: Build CLI
+        run: pnpm run cli:build
+
+      - name: Build SAVE POINT
+        timeout-minutes: 25
+        shell: pwsh
+        env:
+          INPUT_URL: ${{ inputs.url }}
+          INPUT_APP_VERSION: ${{ inputs.app_version }}
+        run: |
+          # The theme reporter has to run inside the dashboard's own frame, and
+          # --inject only reaches the top page, so ride along with Pake's
+          # all-frames script instead.
+          Get-Content -Raw (Join-Path $env:GITHUB_WORKSPACE "savepoint/savepoint-theme-reporter.js") |
+            Add-Content -Path "src-tauri/src/inject/frame_links.js"
+          $inject = Join-Path $env:GITHUB_WORKSPACE "savepoint/savepoint-titlebar.js"
+          $args = @(
+            $env:INPUT_URL,
+            "--name", "SAVE POINT",
+            "--title", "SAVE_POINT.EXE",
+            "--icon", "https://emmiwhoooo.github.io/emmi.os/savepoint/assets/sprite-heart.png",
+            "--width", "1400",
+            "--height", "900",
+            "--min-width", "760",
+            "--min-height", "520",
+            "--hide-window-decorations",
+            "--inject", $inject,
+            "--app-version", $env:INPUT_APP_VERSION
+          )
+          Write-Host "Running: node dist/cli.js $($args -join ' ')"
+          node dist/cli.js $args
+          git checkout -- src-tauri/Cargo.lock
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v6
+        with:
+          name: SAVE_POINT-Windows
+          path: "SAVE POINT.msi"
+          retention-days: 7
