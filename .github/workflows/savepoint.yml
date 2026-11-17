@@ -53,6 +53,11 @@ jobs:
           # all-frames script instead.
           Get-Content -Raw (Join-Path $env:GITHUB_WORKSPACE "savepoint/savepoint-theme-reporter.js") |
             Add-Content -Path "src-tauri/src/inject/frame_links.js"
+          # Let the custom title bar resize the undecorated window from its edges.
+          $cap = "src-tauri/capabilities/default.json"
+          $j = Get-Content -Raw $cap | ConvertFrom-Json
+          $j.permissions += "core:window:allow-start-resize-dragging"
+          $j | ConvertTo-Json -Depth 10 | Set-Content -Encoding utf8NoBOM $cap
           $inject = Join-Path $env:GITHUB_WORKSPACE "savepoint/savepoint-titlebar.js"
           $args = @(
             $env:INPUT_URL,
