@@ -14,6 +14,11 @@ on:
         description: "App version (bump it to install over an older build)"
         required: false
         default: "1.0.0"
+      debug:
+        description: "Debug build (right-click > Inspect works)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -41,6 +46,7 @@ jobs:
         env:
           INPUT_URL: ${{ inputs.url }}
           INPUT_APP_VERSION: ${{ inputs.app_version }}
+          INPUT_DEBUG: ${{ inputs.debug }}
         run: |
           # The theme reporter has to run inside the dashboard's own frame, and
           # --inject only reaches the top page, so ride along with Pake's
@@ -61,6 +67,7 @@ jobs:
             "--inject", $inject,
             "--app-version", $env:INPUT_APP_VERSION
           )
+          if ($env:INPUT_DEBUG -eq "true") { $args += "--debug" }
           Write-Host "Running: node dist/cli.js $($args -join ' ')"
           node dist/cli.js $args
           git checkout -- src-tauri/Cargo.lock
