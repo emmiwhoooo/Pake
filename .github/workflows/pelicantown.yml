@@ -1,0 +1,89 @@
+name: Build PELICAN_TOWN.EXE
+
+# One-click Windows build of Em's Stardew tracker (valley.log, inside the arcade) as a desktop app.
+# Run it from the Actions tab; the installer appears as a download on the run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "arcade link (the app jumps to valley.log)"
+        required: true
+        default: "https://claude.ai/artifact/XxfCjmZADHq3QWu9DbMPre"
+      app_version:
+        description: "App version (bump it to install over an older build)"
+        required: false
+        default: "1.0.0"
+      debug:
+        description: "Debug build (right-click > Inspect works)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js Environment
+        uses: ./.github/actions/setup-env
+        with:
+          mode: build
+
+      - name: Build CLI
+        run: pnpm run cli:build
+
+      - name: Build PELICAN TOWN
+        timeout-minutes: 25
+        shell: pwsh
+        env:
+          INPUT_URL: ${{ inputs.url }}
+          INPUT_APP_VERSION: ${{ inputs.app_version }}
+          INPUT_DEBUG: ${{ inputs.debug }}
+        run: |
+          # The theme reporter has to run inside the dashboard's own frame, and
+          # --inject only reaches the top page, so ride along with Pake's
+          # all-frames script instead.
+          Get-Content -Raw (Join-Path $env:GITHUB_WORKSPACE "savepoint/savepoint-theme-reporter.js") |
+            Add-Content -Path "src-tauri/src/inject/frame_links.js"
+          # Land on the farm tracker instead of the arcade's lobby.
+          Get-Content -Raw (Join-Path $env:GITHUB_WORKSPACE "pelicantown/valley-opener.js") |
+            Add-Content -Path "src-tauri/src/inject/frame_links.js"
+          # Let the custom title bar resize the undecorated window from its edges.
+          $cap = "src-tauri/capabilities/default.json"
+          $j = Get-Content -Raw $cap | ConvertFrom-Json
+          $j.permissions += "core:window:allow-start-resize-dragging"
+          $j.permissions += "core:window:allow-set-title"
+          $j | ConvertTo-Json -Depth 10 | Set-Content -Encoding utf8NoBOM $cap
+          $inject = Join-Path $env:GITHUB_WORKSPACE "pelicantown/pelicantown-titlebar.js"
+          $args = @(
+            $env:INPUT_URL,
+            "--name", "PELICAN TOWN",
+            "--title", "PELICAN_TOWN.EXE",
+            "--icon", (Join-Path $env:GITHUB_WORKSPACE "pelicantown/icon.png"),
+            "--width", "1400",
+            "--height", "900",
+            "--min-width", "760",
+            "--min-height", "520",
+            "--hide-window-decorations",
+            "--inject", $inject,
+            "--app-version", $env:INPUT_APP_VERSION
+          )
+          if ($env:INPUT_DEBUG -eq "true") { $args += "--debug" }
+          Write-Host "Running: node dist/cli.js $($args -join ' ')"
+          node dist/cli.js $args
+          git checkout -- src-tauri/Cargo.lock src-tauri/src/inject/frame_links.js src-tauri/capabilities/default.json
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v6
+        with:
+          name: PELICAN_TOWN-Windows
+          path: "PELICAN TOWN.msi"
+          retention-days: 7
